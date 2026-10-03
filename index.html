@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cash Flow Forecasting Assistant</title>
+<style>
+  :root {
+    --ink: #17202a; --muted: #55636f; --paper: #f2f4f7; --panel: #ffffff; --line: #d3dae1;
+    --accent: #1d3f72; --accent-ink: #ffffff;
+    --good: #1b6b3a; --good-bg: #e4f2e9; --bad: #a4261d; --bad-bg: #fbe6e3; --caution: #8a5a00; --caution-bg: #fdf1d6;
+    --c-base: #1d3f72; --c-down: #a4261d; --c-up: #1b6b3a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font: 700 30px/1.2 Georgia, "Times New Roman", serif; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font: 700 20px/1.3 Georgia, "Times New Roman", serif; margin: 0 0 12px; }
+  h3 { font-size: 14px; margin: 18px 0 8px; color: var(--accent); }
+  .lede { color: var(--muted); max-width: 66ch; margin: 0 0 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; }
+  tr.group td { background: #eaeff5; font-weight: 700; color: var(--accent); font-size: 14px; }
+  tr.total td { font-weight: 700; border-top: 2px solid var(--line); }
+  tr.neg td.closing { color: var(--bad); font-weight: 700; }
+  input, select { font: inherit; color: var(--ink); padding: 7px 8px; border: 1px solid #a9b5bf; border-radius: 4px; background: #fff; width: 100%; }
+  input[type=number] { text-align: right; min-width: 110px; }
+  input:focus-visible, select:focus-visible, button:focus-visible { outline: 3px solid #9db8e0; outline-offset: 1px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 16px; margin-bottom: 8px; }
+  .grid label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .grid .wide { grid-column: span 2; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-top: 16px; }
+  button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 4px; cursor: pointer; border: 1px solid var(--accent); background: #fff; color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); }
+  button:disabled { opacity: .6; cursor: progress; }
+  #status { margin: 12px 0 0; min-height: 1.5em; color: var(--muted); }
+  #status.error { color: var(--bad); }
+  .note { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 13px; font-weight: 600; }
+  .tag.ok { background: var(--good-bg); color: var(--good); }
+  .tag.bad { background: var(--bad-bg); color: var(--bad); }
+  .tag.caution { background: var(--caution-bg); color: var(--caution); }
+  .list { list-style: none; margin: 0; padding: 0; }
+  .list li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .list .detail { color: var(--muted); font-size: 14px; display: block; margin-top: 2px; }
+  .warn { background: var(--bad-bg); color: var(--bad); border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; font-weight: 600; }
+  .na { color: var(--muted); font-size: 13px; }
+  .commentary { white-space: pre-wrap; max-width: 72ch; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; margin: 8px 0 0; }
+  .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 6px; }
+  .legend i.dash { background: repeating-linear-gradient(90deg, #55636f 0 5px, transparent 5px 9px); }
+  .viewsel { max-width: 260px; margin-bottom: 10px; }
+  svg { width: 100%; height: auto; display: block; }
+  .oneoff th, .oneoff td { padding: 5px 6px; }
+  @media (max-width: 700px) { h1 { font-size: 24px; } .grid { grid-template-columns: 1fr; } .grid .wide { grid-column: auto; } button.primary { width: 100%; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Cash flow forecasting assistant</h1>
+  <p class="lede">Enter your opening cash, expected receipts and payments. The app builds a month-by-month forecast with base, downside and upside scenarios, and runs data checks and cash alerts in code, so the numbers are exact. Claude then writes the review using the rules in a written Skill (SKILL.md).</p>
+
+  <section class="panel" aria-labelledby="in-h">
+    <h2 id="in-h">Your assumptions</h2>
+
+    <div class="grid">
+      <div class="wide"><label for="company">Company name (optional)</label><input id="company" type="text" maxlength="80"></div>
+      <div><label for="unit">Unit of the figures</label>
+        <select id="unit"><option>Rs</option><option>Rs thousands</option><option>Rs lakhs</option><option>Rs crore</option><option>Rs millions</option></select></div>
+      <div><label for="months">Forecast length</label>
+        <select id="months"><option value="3">3 months</option><option value="6" selected>6 months</option><option value="12">12 months</option></select></div>
+      <div><label for="openingCash">Opening cash balance (required)</label><input id="openingCash" type="number" step="any"></div>
+      <div><label for="minBuffer">Minimum cash buffer</label><input id="minBuffer" type="number" step="any" min="0"></div>
+    </div>
+
+    <h3>Recurring monthly receipts</h3>
+    <div class="grid">
+      <div><label for="receipts">Cash receipts per month (required)</label><input id="receipts" type="number" step="any" min="0"></div>
+      <div><label for="receiptsGrowth">Receipts growth % per month</label><input id="receiptsGrowth" type="number" step="any" min="-50" max="100"></div>
+    </div>
+
+    <h3>Recurring monthly outflows</h3>
+    <div class="grid">
+      <div><label for="o_payroll">Payroll</label><input id="o_payroll" type="number" step="any" min="0"></div>
+      <div><label for="o_rent">Rent and utilities</label><input id="o_rent" type="number" step="any" min="0"></div>
+      <div><label for="o_suppliers">Supplier payments</label><input id="o_suppliers" type="number" step="any" min="0"></div>
+      <div><label for="o_loan">Loan repayments</label><input id="o_loan" type="number" step="any" min="0"></div>
+      <div><label for="o_taxes">Tax and statutory payments</label><input id="o_taxes" type="number" step="any" min="0"></div>
+      <div><label for="o_other">Other outflows</label><input id="o_other" type="number" step="any" min="0"></div>
+      <div><label for="costGrowth">Cost growth % per month</label><input id="costGrowth" type="number" step="any" min="-50" max="100"></div>
+    </div>
+    <p class="note">Cost growth applies to supplier payments and other outflows. Payroll, rent, loan repayments and tax payments stay flat. Blank outflows are treated as nil and the analysis says so.</p>
+
+    <h3>One-off items (optional)</h3>
+    <div class="table-wrap">
+      <table class="oneoff">
+        <thead><tr><th>Month no.</th><th>Description</th><th>Type</th><th class="num">Amount</th></tr></thead>
+        <tbody id="oneoffs"></tbody>
+      </table>
+    </div>
+
+    <h3>Scenarios</h3>
+    <div class="grid">
+      <div><label for="downsidePct">Downside: receipts fall by %</label><input id="downsidePct" type="number" step="any" min="0" max="100"></div>
+      <div><label for="upsidePct">Upside: receipts rise by %</label><input id="upsidePct" type="number" step="any" min="0" max="100"></div>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="run" class="primary">Build forecast</button>
+      <button type="button" id="clear">Clear all figures</button>
+    </div>
+    <p id="status" role="status"></p>
+    <p class="note">The values shown are sample figures for a fictional company. A forecast is not a prediction: it follows from the assumptions you enter.</p>
+  </section>
+
+  <section id="results" hidden>
+    <div class="panel"><h2>Cash position alerts</h2><div id="alerts"></div></div>
+    <div class="panel"><h2>Data checks</h2><div id="checks"></div></div>
+    <div class="panel"><h2>Closing cash by scenario</h2>
+      <div id="chart"></div>
+      <div class="legend" id="legend"></div></div>
+    <div class="panel"><h2>Scenario comparison</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Measure</th><th class="num">Base case</th><th class="num">Downside</th><th class="num">Upside</th></tr></thead>
+        <tbody id="scen"></tbody></table></div></div>
+    <div class="panel"><h2>Month-by-month forecast</h2>
+      <select id="view" class="viewsel" aria-label="Scenario to show"><option value="0">Base case</option><option value="1">Downside case</option><option value="2">Upside case</option></select>
+      <div class="table-wrap"><table>
+        <thead id="mhead"></thead><tbody id="mbody"></tbody></table></div></div>
+    <div class="panel"><h2>Analysis</h2><div id="commentary" class="commentary"></div></div>
+  </section>
+</main>
+
+<script>
+  const SAMPLE = {
+    openingCash: 500000, minBuffer: 200000, receipts: 800000, receiptsGrowth: 2, costGrowth: 1,
+    payroll: 300000, rent: 80000, suppliers: 250000, loan: 60000, taxes: 40000, other: 50000,
+    downsidePct: 15, upsidePct: 10,
+    oneOffs: [ [3, "Advance tax", "outflow", 150000], [5, "Equipment purchase", "outflow", 200000] ]
+  };
+  const ONE_OFF_ROWS = 5;
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status"), runBtn = $("run");
+  let last = null;
+
+  function buildOneOffs(items) {
+    const tb = $("oneoffs"); tb.textContent = "";
+    for (let i = 0; i < ONE_OFF_ROWS; i++) {
+      const it = items[i] || ["", "", "outflow", ""];
+      const tr = document.createElement("tr");
+      const mk = (el, attrs) => { const td = document.createElement("td"); Object.assign(el, attrs); td.appendChild(el); tr.appendChild(td); return el; };
+      mk(document.createElement("input"), { type: "number", min: 1, step: 1, value: it[0] }).setAttribute("aria-label", "One-off " + (i + 1) + " month number");
+      mk(document.createElement("input"), { type: "text", maxLength: 40, value: it[1] }).setAttribute("aria-label", "One-off " + (i + 1) + " description");
+      const sel = document.createElement("select");
+      ["outflow", "inflow"].forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v === "outflow" ? "Outflow (payment)" : "Inflow (receipt)"; sel.appendChild(o); });
+      sel.value = it[2]; sel.setAttribute("aria-label", "One-off " + (i + 1) + " type"); mk(sel, {});
+      mk(document.createElement("input"), { type: "number", min: 0, step: "any", value: it[3] }).setAttribute("aria-label", "One-off " + (i + 1) + " amount");
+      tr.lastChild.className = "num";
+      tb.appendChild(tr);
+    }
+  }
+  function fillForm(s) {
+    ["openingCash","minBuffer","receipts","receiptsGrowth","costGrowth","downsidePct","upsidePct"].forEach(k => { $(k).value = s ? s[k] : ""; });
+    ["payroll","rent","suppliers","loan","taxes","other"].forEach(k => { $("o_" + k).value = s ? s[k] : ""; });
+    buildOneOffs(s ? s.oneOffs : []);
+  }
+  fillForm(SAMPLE);
+  $("company").value = "Sample Traders Pvt Ltd (fictional)";
+  $("clear").addEventListener("click", () => { fillForm(null); $("company").value = ""; });
+
+  const num = n => Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const signed = n => (n > 0 ? "+" : n < 0 ? "-" : "") + num(Math.abs(n));
+  function cell(tr, text, cls) { const td = document.createElement("td"); if (cls) td.className = cls; td.textContent = text; tr.appendChild(td); return td; }
+  function tag(text, kind) { const s = document.createElement("span"); s.className = "tag " + kind; s.textContent = text; return s; }
+
+  function collect() {
+    const oneOffs = [];
+    $("oneoffs").querySelectorAll("tr").forEach(tr => {
+      const f = tr.querySelectorAll("input, select");
+      oneOffs.push({ month: f[0].value, label: f[1].value, type: f[2].value, amount: f[3].value });
+    });
+    const outflows = {};
+    ["payroll","rent","suppliers","loan","taxes","other"].forEach(k => { outflows[k] = $("o_" + k).value; });
+    return {
+      company: $("company").value, unit: $("unit").value, months: $("months").value,
+      openingCash: $("openingCash").value, minBuffer: $("minBuffer").value,
+      receipts: $("receipts").value, receiptsGrowth: $("receiptsGrowth").value, costGrowth: $("costGrowth").value,
+      outflows, downsidePct: $("downsidePct").value, upsidePct: $("upsidePct").value, oneOffs
+    };
+  }
+
+  const COLORS = ["var(--c-base)", "var(--c-down)", "var(--c-up)"];
+
+  function drawChart(d) {
+    const NS = "http://www.w3.org/2000/svg";
+    const W = 760, H = 300, L = 78, R = 16, T = 14, B = 34;
+    const series = d.scenarios.map(s => s.rows.map(r => r.closing));
+    const buffer = d.assumptions.minBuffer;
+    const all = [].concat.apply([], series).concat([buffer, 0]);
+    let lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+    if (hi === lo) { hi += 1; lo -= 1; }
+    const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
+    const n = d.months;
+    const x = i => L + (n === 1 ? 0 : (i * (W - L - R)) / (n - 1));
+    const y = v => T + ((hi - v) * (H - T - B)) / (hi - lo);
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Line chart of closing cash by month for the base, downside and upside scenarios");
+    const el = (name, attrs, text) => { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text !== undefined) e.textContent = text; svg.appendChild(e); return e; };
+    for (let t = 0; t <= 4; t++) {
+      const v = lo + ((hi - lo) * t) / 4;
+      el("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: "#e3e8ee" });
+      el("text", { x: L - 8, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "#55636f" }, num(Math.round(v)));
+    }
+    for (let i = 0; i < n; i++) el("text", { x: x(i), y: H - 12, "text-anchor": "middle", "font-size": 11, fill: "#55636f" }, "M" + (i + 1));
+    el("line", { x1: L, x2: W - R, y1: y(0), y2: y(0), stroke: "#17202a", "stroke-width": 1 });
+    if (buffer > 0) el("line", { x1: L, x2: W - R, y1: y(buffer), y2: y(buffer), stroke: "#55636f", "stroke-dasharray": "5 4", "stroke-width": 1.5 });
+    const colour = si => getComputedStyle(document.documentElement).getPropertyValue(["--c-base", "--c-down", "--c-up"][si]).trim();
+    series.forEach((vals, si) => {
+      el("polyline", { points: vals.map((v, i) => x(i) + "," + y(v)).join(" "), fill: "none", stroke: colour(si), "stroke-width": 2.5 });
+      vals.forEach((v, i) => el("circle", { cx: x(i), cy: y(v), r: 3.5, fill: colour(si) }));
+    });
+    const c = $("chart"); c.textContent = ""; c.appendChild(svg);
+    const lg = $("legend"); lg.textContent = "";
+    d.scenarios.forEach((s, i) => { const sp = document.createElement("span"); const sw = document.createElement("i"); sw.style.background = COLORS[i]; sp.appendChild(sw); sp.appendChild(document.createTextNode(s.name)); lg.appendChild(sp); });
+    if (buffer > 0) { const sp = document.createElement("span"); const sw = document.createElement("i"); sw.className = "dash"; sp.appendChild(sw); sp.appendChild(document.createTextNode("Minimum cash buffer")); lg.appendChild(sp); }
+  }
+
+  function drawMonths(d, idx) {
+    const s = d.scenarios[idx], rows = s.rows;
+    const head = $("mhead"); head.textContent = "";
+    const hr = document.createElement("tr");
+    const th0 = document.createElement("th"); th0.textContent = "Item (" + d.unit + ")"; hr.appendChild(th0);
+    rows.forEach(r => { const th = document.createElement("th"); th.className = "num"; th.textContent = "Month " + r.month; hr.appendChild(th); });
+    const thT = document.createElement("th"); thT.className = "num"; thT.textContent = "Total"; hr.appendChild(thT);
+    head.appendChild(hr);
+    const body = $("mbody"); body.textContent = "";
+    const line = (label, key, opts) => {
+      opts = opts || {};
+      const vals = rows.map(r => r[key]);
+      if (opts.hideIfZero && vals.every(v => v === 0)) return;
+      const tr = document.createElement("tr"); if (opts.cls) tr.className = opts.cls;
+      cell(tr, label);
+      vals.forEach((v, i) => { const td = cell(tr, opts.signed ? signed(v) : num(v), "num"); if (opts.closing && rows[i].closing < 0) td.style.color = "var(--bad)"; });
+      cell(tr, opts.total === false ? "" : (opts.signed ? signed(vals.reduce((a, b) => a + b, 0)) : num(vals.reduce((a, b) => a + b, 0))), "num");
+      body.appendChild(tr);
+    };
+    const group = t => { const g = document.createElement("tr"); g.className = "group"; const gt = document.createElement("td"); gt.colSpan = rows.length + 2; gt.textContent = t; g.appendChild(gt); body.appendChild(g); };
+    line("Opening cash", "opening", { total: false });
+    group("Inflows");
+    line("Recurring receipts", "receipts");
+    line("One-off inflows", "oneOffInflow", { hideIfZero: true });
+    line("Total inflows", "totalInflows", { cls: "total" });
+    group("Outflows");
+    line("Payroll", "payroll", { hideIfZero: true });
+    line("Rent and utilities", "rent", { hideIfZero: true });
+    line("Supplier payments", "suppliers", { hideIfZero: true });
+    line("Loan repayments", "loan", { hideIfZero: true });
+    line("Tax and statutory payments", "taxes", { hideIfZero: true });
+    line("Other outflows", "other", { hideIfZero: true });
+    line("One-off outflows", "oneOffOutflow", { hideIfZero: true });
+    line("Total outflows", "totalOutflows", { cls: "total" });
+    group("Result");
+    line("Net cash flow", "net", { signed: true });
+    line("Closing cash", "closing", { cls: "total", closing: true, total: false });
+  }
+
+  function render(d) {
+    last = d;
+    // alerts
+    const al = $("alerts"); al.textContent = "";
+    const ul = document.createElement("ul"); ul.className = "list";
+    d.alerts.forEach(a => {
+      const li = document.createElement("li");
+      li.appendChild(tag(a.level === "ok" ? "Clear" : a.level === "warning" ? "Below zero" : "Below buffer", a.level === "ok" ? "ok" : a.level === "warning" ? "bad" : "caution"));
+      li.appendChild(document.createTextNode(" " + a.text)); ul.appendChild(li);
+    });
+    al.appendChild(ul);
+
+    // checks
+    const ck = $("checks"); ck.textContent = "";
+    const bad = d.checks.filter(c => c.status === "mismatch");
+    if (bad.length) { const w = document.createElement("div"); w.className = "warn"; w.textContent = bad.length + " check(s) failed. Verify these figures before relying on the analysis."; ck.appendChild(w); }
+    const cl = document.createElement("ul"); cl.className = "list";
+    d.checks.forEach(c => {
+      const li = document.createElement("li");
+      li.appendChild(tag(c.status === "ok" ? "Passed" : "Mismatch", c.status === "ok" ? "ok" : "bad"));
+      li.appendChild(document.createTextNode(" " + c.name));
+      const dt = document.createElement("span"); dt.className = "detail"; dt.textContent = c.detail; li.appendChild(dt); cl.appendChild(li);
+    });
+    ck.appendChild(cl);
+
+    drawChart(d);
+
+    // scenario comparison
+    const sc = $("scen"); sc.textContent = "";
+    const rowDef = [
+      ["Closing cash (end of forecast)", s => num(s.closingCash)],
+      ["Total inflows", s => num(s.totalInflows)],
+      ["Total outflows", s => num(s.totalOutflows)],
+      ["Average monthly net cash flow", s => signed(s.averageMonthlyNet)],
+      ["Lowest closing cash", s => num(s.lowestClosing.value) + " (month " + s.lowestClosing.month + ")"],
+      ["First month below buffer", s => s.firstMonthBelowBuffer === null ? "None" : "Month " + s.firstMonthBelowBuffer],
+      ["First month below zero", s => s.firstMonthBelowZero === null ? "None" : "Month " + s.firstMonthBelowZero],
+      ["Cash runway at average (months)", s => s.runwayMonths === null ? "n/a" : num(s.runwayMonths)]
+    ];
+    rowDef.forEach(([label, f]) => { const tr = document.createElement("tr"); cell(tr, label); d.scenarios.forEach(s => cell(tr, f(s.summary), "num")); sc.appendChild(tr); });
+    const tr = document.createElement("tr"); cell(tr, "Assumption");
+    d.scenarios.forEach(s => { const td = cell(tr, s.note, "num"); td.className = "num na"; }); sc.appendChild(tr);
+
+    $("view").value = "0"; drawMonths(d, 0);
+
+    const cm = $("commentary"); cm.textContent = "";
+    if (d.commentarySource === "template") {
+      const n = document.createElement("p"); n.className = "warn";
+      n.textContent = "Claude commentary is unavailable (" + (d.commentaryError || "unknown reason") + "). This is a standard summary generated by code from the calculated figures.";
+      cm.appendChild(n);
+    }
+    cm.appendChild(document.createTextNode(d.commentary));
+    const res = $("results"); res.hidden = false;
+    res.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  $("view").addEventListener("change", e => { if (last) drawMonths(last, Number(e.target.value)); });
+
+  runBtn.addEventListener("click", async () => {
+    statusEl.className = ""; statusEl.textContent = "Calculating and writing the analysis...";
+    runBtn.disabled = true;
+    try {
+      const resp = await fetch("/api/forecast", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(collect()) });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Something went wrong.");
+      statusEl.textContent = "";
+      render(data);
+    } catch (e) { statusEl.className = "error"; statusEl.textContent = e.message; }
+    finally { runBtn.disabled = false; }
+  });
+</script>
+</body>
+</html>
